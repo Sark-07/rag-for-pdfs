@@ -1,0 +1,15 @@
+langchain
+langchain-core
+langchain-community
+pypdf
+pymupdf
+sentence-transformers
+faiss-cpu
+chromadb
+langchain-groq
+python-dotenv
+streamlit>=1.37.0
+langchain-openai>=0.1.20
+openai>=1.45.0
+numpy>=1.26.4
+scikit-learn>=1.5.1
