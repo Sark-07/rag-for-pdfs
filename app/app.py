@@ -11,18 +11,20 @@ load_dotenv()
 
 st.set_page_config(page_title="RAG over PDFs", page_icon="📄", layout="wide")
 
-if not os.getenv("OPENAI_API_KEY"):
-    st.warning("Set OPENAI_API_KEY in your environment or .env file to use OpenAI.")
+if not os.getenv("GOOGLE_API_KEY"):
+    st.warning("Set GOOGLE_API_KEY in your environment or .env file to use Google.")
 
-st.title("📄 RAG over PDFs (OpenAI)")
+st.title("📄 RAG over PDFs (Google)")
 
 with st.sidebar:
     st.header("Settings")
     top_k = st.slider("Top K", 1, 10, 3, key="top_k_slider")
     embed_model = st.text_input(
-        "Embedding model", value="text-embedding-3-large", key="embed_model_input"
+        "Embedding model", value="models/gemini-embedding-001", key="embed_model_input"
     )
-    chat_model = st.text_input("Chat model", value="gpt-4o", key="chat_model_input")
+    chat_model = st.text_input(
+        "Chat model", value="gemini-2.5-flash", key="chat_model_input"
+    )
 
     st.divider()
     st.subheader("Upload PDFs")
@@ -35,7 +37,7 @@ with st.sidebar:
         accept_multiple_files=True,
         key="pdf_uploader",
     )
-    upload_index_btn = st.button("Add uploaded to index", key="upload_index_btn")
+    upload_index_btn = st.button("Add files", key="upload_index_btn")
 
 # Keep a single pipeline instance across interactions via session state
 if "pipeline" not in st.session_state:
@@ -68,7 +70,7 @@ if upload_index_btn:
         st.info("No files selected.")
 
 st.subheader("Ask a question")
-query = st.text_input("Your question", key="question_input")
+query = st.text_input("Your question", key="qa_question")
 ask = st.button("Ask", key="ask_btn")
 
 if ask and query:
@@ -80,5 +82,8 @@ if ask and query:
             st.markdown("**Sources**")
             for s in output["sources"]:
                 st.markdown(
-                    f"- {s['metadata'].get('source_file', 'unknown')} (score: {s.get('similarity', 0):.3f})"
+                    f"- {s.get('source', 'unknown')} (score: {s.get('similarity', 0):.3f})"
                 )
+                # Show content preview if available
+                if s.get("content"):
+                    st.markdown(f"  *Preview: {s['content'][:100]}...*")

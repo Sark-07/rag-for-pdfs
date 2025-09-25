@@ -5,22 +5,26 @@ from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 import chromadb
 import numpy as np
+from prompt import build_qa_prompt, META_PROMPT
 
 
 class EmbeddingManager:
     """OpenAI embeddings helper."""
 
     def __init__(
-        self, model: str = "text-embedding-3-large", dimensions: int | None = None
+        self, model: str = "models/gemini-embedding-001", dimensions: int | None = None
     ):
         self.model_name = model
         self.dimensions = dimensions
         self.model = (
-            OpenAIEmbeddings(model=self.model_name, dimensions=self.dimensions)
+            GoogleGenerativeAIEmbeddings(
+                model=self.model_name, dimensions=self.dimensions
+            )
             if dimensions
-            else OpenAIEmbeddings(model=self.model_name)
+            else GoogleGenerativeAIEmbeddings(model=self.model_name)
         )
 
     def embed_texts(self, texts: List[str]) -> np.ndarray:
@@ -34,7 +38,7 @@ class VectorStore:
     def __init__(
         self,
         collection_name: str = "pdf_documents",
-        persist_directory: str = "data/vector_store",
+        persist_directory: str = "data/vector_stores",
     ):
         self.collection_name = collection_name
         self.persist_directory = persist_directory
@@ -126,18 +130,18 @@ class RAGRetriever:
 class RAGPipeline:
     def __init__(
         self,
-        model_name: str = "gpt-4o",
+        model_name: str = "gemini-2.5-flash",
         embedding_model: str = "text-embedding-3-large",
     ):
         self.embedder = EmbeddingManager(model=embedding_model)
         self.vector = VectorStore()
-        self.llm = ChatOpenAI(
+        self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=0.1,
             max_tokens=1024,
             timeout=None,
             max_retries=2,
-            api_key=os.getenv("OPENAI_API_KEY"),
+            api_key=os.getenv("GOOGLE_API_KEY"),
         )
         self.retriever = RAGRetriever(self.vector, self.embedder)
 
@@ -157,6 +161,32 @@ class RAGPipeline:
         context = "\n\n".join([r["content"] for r in results]) if results else ""
         if not context:
             return {"answer": "No relevant context found.", "sources": []}
-        prompt = f"Use the following context to answer the question concisely.\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
-        resp = self.llm.invoke([prompt])
-        return {"answer": resp.content, "sources": results}
+
+        # Use meta prompt as system message and build QA prompt
+        system_message = META_PROMPT
+        user_prompt = build_qa_prompt(context=context, question=question)
+
+        # Format sources with citations for the response
+        formatted_sources = []
+        for r in results:
+            source_file = r["metadata"].get("source_file", "unknown")
+            page = r["metadata"].get("page", "unknown")
+            formatted_sources.append(
+                {
+                    "content": (
+                        r["content"][:200] + "..."
+                        if len(r["content"]) > 200
+                        else r["content"]
+                    ),
+                    "source": f"[doc:{source_file} p.{page}]",
+                    "similarity": r["similarity"],
+                }
+            )
+
+        resp = self.llm.invoke(
+            [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        return {"answer": resp.content, "sources": formatted_sources}
